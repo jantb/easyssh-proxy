@@ -34,18 +34,7 @@ type (
 		Port     string
 		Password string
 		Timeout  time.Duration
-		Proxy    DefaultConfig
-	}
-
-	// DefaultConfig for ssh proxy config
-	DefaultConfig struct {
-		User     string
-		Server   string
-		Key      string
-		KeyPath  string
-		Port     string
-		Password string
-		Timeout  time.Duration
+		Proxy    *MakeConfig
 	}
 )
 
@@ -65,7 +54,7 @@ func getKeyFile(keypath string) (ssh.Signer, error) {
 	return pubkey, nil
 }
 
-func getSSHConfig(config DefaultConfig) *ssh.ClientConfig {
+func getSSHConfig(config MakeConfig) *ssh.ClientConfig {
 	// auths holds the detected ssh auth methods
 	auths := []ssh.AuthMethod{}
 
@@ -102,42 +91,18 @@ func (ssh_conf *MakeConfig) connect() (*ssh.Session, error) {
 	var client *ssh.Client
 	var err error
 
-	targetConfig := getSSHConfig(DefaultConfig{
-		User:     ssh_conf.User,
-		Key:      ssh_conf.Key,
-		KeyPath:  ssh_conf.KeyPath,
-		Password: ssh_conf.Password,
-		Timeout:  ssh_conf.Timeout,
-	})
+	targetConfig := getSSHConfig(*ssh_conf)
 
+	targetHostPort := net.JoinHostPort(ssh_conf.Server, ssh_conf.Port)
 	// Enable proxy command
-	if ssh_conf.Proxy.Server != "" {
-		proxyConfig := getSSHConfig(DefaultConfig{
-			User:     ssh_conf.Proxy.User,
-			Key:      ssh_conf.Proxy.Key,
-			KeyPath:  ssh_conf.Proxy.KeyPath,
-			Password: ssh_conf.Proxy.Password,
-			Timeout:  ssh_conf.Proxy.Timeout,
-		})
-
-		proxyClient, err := ssh.Dial("tcp", net.JoinHostPort(ssh_conf.Proxy.Server, ssh_conf.Proxy.Port), proxyConfig)
+	if ssh_conf.Proxy != nil {
+		c, err := connectProxy(ssh_conf.Proxy, targetConfig, targetHostPort)
 		if err != nil {
 			return nil, err
 		}
-
-		conn, err := proxyClient.Dial("tcp", net.JoinHostPort(ssh_conf.Server, ssh_conf.Port))
-		if err != nil {
-			return nil, err
-		}
-
-		ncc, chans, reqs, err := ssh.NewClientConn(conn, net.JoinHostPort(ssh_conf.Server, ssh_conf.Port), targetConfig)
-		if err != nil {
-			return nil, err
-		}
-
-		client = ssh.NewClient(ncc, chans, reqs)
+		client = c
 	} else {
-		client, err = ssh.Dial("tcp", net.JoinHostPort(ssh_conf.Server, ssh_conf.Port), targetConfig)
+		client, err = ssh.Dial("tcp", targetHostPort, targetConfig)
 		if err != nil {
 			return nil, err
 		}
@@ -149,6 +114,28 @@ func (ssh_conf *MakeConfig) connect() (*ssh.Session, error) {
 	}
 
 	return session, nil
+}
+
+func connectProxy(proxy *MakeConfig, targetConfig *ssh.ClientConfig, targetHostPort string) (*ssh.Client, error) {
+	proxyConfig := getSSHConfig(*proxy)
+
+	hostPort := net.JoinHostPort(proxy.Server, proxy.Port)
+	proxyClient, err := ssh.Dial("tcp", hostPort, proxyConfig)
+
+	if err != nil {
+		return nil, err
+	}
+
+	conn, err := proxyClient.Dial("tcp", targetHostPort)
+	if err != nil {
+		return nil, err
+	}
+
+	ncc, chans, reqs, err := ssh.NewClientConn(conn, targetHostPort, targetConfig)
+	if err != nil {
+		return nil, err
+	}
+	return ssh.NewClient(ncc, chans, reqs), nil
 }
 
 // Stream returns one channel that combines the stdout and stderr of the command

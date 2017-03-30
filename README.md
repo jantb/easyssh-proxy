@@ -51,9 +51,9 @@ func main() {
 		Server: "example.com",
 		// Optional key or Password without either we try to contact your agent SOCKET
 		//Password: "password",
-		Key:     "/.ssh/id_rsa",
+		KeyPath:     "/.ssh/id_rsa",
 		Port:    "22",
-		Timeout: 60,
+		Timeout: 60 *time.Second,
 	}
 
 	// Call Run method with command you want to run on remote server.
