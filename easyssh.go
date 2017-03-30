@@ -101,6 +101,7 @@ func (ssh_conf *MakeConfig) connect() (*ssh.Session, error) {
 			return nil, err
 		}
 		client = c
+
 	} else {
 		client, err = ssh.Dial("tcp", targetHostPort, targetConfig)
 		if err != nil {
@@ -131,6 +132,10 @@ func connectProxy(proxy *MakeConfig, targetConfig *ssh.ClientConfig, targetHostP
 		return nil, err
 	}
 
+	return createClient(conn, targetHostPort, targetConfig)
+}
+
+func createClient(conn net.Conn, targetHostPort string, targetConfig *ssh.ClientConfig) (*ssh.Client, error) {
 	ncc, chans, reqs, err := ssh.NewClientConn(conn, targetHostPort, targetConfig)
 	if err != nil {
 		return nil, err
