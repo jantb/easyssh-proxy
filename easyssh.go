@@ -96,11 +96,14 @@ func (ssh_conf *MakeConfig) connect() (*ssh.Session, error) {
 	targetHostPort := net.JoinHostPort(ssh_conf.Server, ssh_conf.Port)
 	// Enable proxy command
 	if ssh_conf.Proxy != nil {
-		c, err := connectProxy(ssh_conf.Proxy, targetConfig, targetHostPort)
+		conn, err := connectProxy(ssh_conf.Proxy, targetConfig, targetHostPort)
 		if err != nil {
 			return nil, err
 		}
-		client = c
+		client, err = createClient(conn, targetHostPort, targetConfig)
+		if err != nil {
+			return nil, err
+		}
 
 	} else {
 		client, err = ssh.Dial("tcp", targetHostPort, targetConfig)
@@ -117,22 +120,33 @@ func (ssh_conf *MakeConfig) connect() (*ssh.Session, error) {
 	return session, nil
 }
 
-func connectProxy(proxy *MakeConfig, targetConfig *ssh.ClientConfig, targetHostPort string) (*ssh.Client, error) {
+func connectProxy(proxy *MakeConfig, targetConfig *ssh.ClientConfig, targetHostPort string) (net.Conn, error) {
 	proxyConfig := getSSHConfig(*proxy)
-
 	hostPort := net.JoinHostPort(proxy.Server, proxy.Port)
-	proxyClient, err := ssh.Dial("tcp", hostPort, proxyConfig)
+	var client *ssh.Client
+	if proxy.Proxy != nil {
+		conn, err := connectProxy(proxy.Proxy, proxyConfig, hostPort)
+		if err != nil {
+			return nil, err
+		}
+		client, err = createClient(conn, targetHostPort, targetConfig)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		c, err := ssh.Dial("tcp", hostPort, proxyConfig)
+		if err != nil {
+			return nil, err
+		}
+		client = c
+	}
 
+	conn, err := client.Dial("tcp", targetHostPort)
 	if err != nil {
 		return nil, err
 	}
 
-	conn, err := proxyClient.Dial("tcp", targetHostPort)
-	if err != nil {
-		return nil, err
-	}
-
-	return createClient(conn, targetHostPort, targetConfig)
+	return conn, nil
 }
 
 func createClient(conn net.Conn, targetHostPort string, targetConfig *ssh.ClientConfig) (*ssh.Client, error) {
